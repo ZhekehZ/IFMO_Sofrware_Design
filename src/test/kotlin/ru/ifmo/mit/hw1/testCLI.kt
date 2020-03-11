@@ -332,4 +332,40 @@ class testCLI {
         assertEquals(expected[0], result[0])
         assertEquals(expected[1], result[1])
     }
+
+    @Test
+    fun TestGrep() {
+        var expected = """
+            hello
+            Hello, 
+            hellllo, 
+            Hello, 
+            hellllo, 
+              omg
+            hellllo, 
+              omg
+                
+
+            hello
+            Hello, 
+            hellllo, 
+            hellllo, 
+              omg
+                
+
+            hello
+            hellllo, 
+
+
+            """.trimIndent()
+        val app = Application
+        val outputStream = ByteArrayOutputStream()
+        val stream = PrintStream(outputStream)
+        System.setOut(stream)
+
+        systemInMock.provideLines("grep -i -A 2 hel+o hello.txt", "grep -A 2 hel+o hello.txt", "cat hello.txt | grep hel+o", "exit")
+        app.main()
+        assertEquals(expected, outputStream.toString())
+
+    }
 }
