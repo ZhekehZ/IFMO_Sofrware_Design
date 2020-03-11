@@ -7,8 +7,10 @@ import java.util.*
 import org.jline.terminal.TerminalBuilder
 import java.io.File
 import java.lang.IllegalArgumentException
+import java.lang.Integer.min
 import java.lang.StringBuilder
 import java.nio.file.Paths
+import kotlin.math.max
 
 const val JOPTSIMPLE_SUPPRESS_EXIT = "joptsimple.suppressExit"
 
@@ -39,6 +41,7 @@ class CommandRunner {
             "echo" -> return echo(opt, arg)
             "pwd" -> return pwd(opt, arg)
             "exit" -> return exit(opt, arg)
+            "grep" -> return grep(opt, arg)
         }
         return ""
     }
@@ -247,6 +250,109 @@ class CommandRunner {
         return ""
     }
 
+    fun grep(opt: List<String>, arg: String?): String {
+        var argV = arg
+        var ignoreCase = false
+        var N: Int? = null
+        var wordRegex = false
+        var res = ""
+        var optC = mutableListOf<String>()
+        var flag = false
+        opt.forEachIndexed() {  index, it ->
+            if (it == "-A" || it == "--after-context") {
+                try {
+                    val tmp = it + opt[index + 1]
+                    optC.add(tmp)
+                    flag = true
+                } catch (e: IndexOutOfBoundsException) {
+                    throw IllegalArgumentException("Wrong value for -A")
+                }
+            } else if (flag) {
+                flag = false
+            } else {
+                optC.add(it)
+            }
+        }
+        //res = arg!!
+        if (arg != null) {
+            res = arg
+        } else {
+            res = cat(listOf(),optC.last())
+            optC = optC.dropLast(1).toMutableList()
+        }
+
+        var regex = optC.last().toRegex()
+        optC = optC.dropLast(1).toMutableList();
+
+        with(getOptionParser()) {
+            acceptsAll(
+                kotlin.collections.listOf("i", "ignore-case"),
+                "ignore case distinctions, so that characters that differ only in case match each other."
+            )
+            acceptsAll(
+                kotlin.collections.listOf("w", "word-regexp"),
+                "Select only those lines containing matches that form whole words.  The test is that the matching substring must either be at the beginning of the line, or preceded by a  non-word  constituent\n" +
+                        "              character.   Similarly,  it  must be either at the end of the line or followed by a non-word constituent character.  Word-constituent characters are letters, digits, and the underscore.  This\n" +
+                        "              option has no effect if -x is also specified.\n"
+            )
+            acceptsAll(
+                kotlin.collections.listOf("A", "after-context"),
+                "Print  NUM  lines of trailing context after matching lines.  Places a line containing a group separator (--) between contiguous groups of matches.  With the -o or --only-matching option, this\n" +
+                        "              has no effect and a warning is given"
+            ).withRequiredArg().ofType(Int::class.java)
+
+            parse(optC.toTypedArray()) { options ->
+                if (options.has("A")) {
+                    N = options.valueOf("A") as Int
+                }
+                if (options.has("i")) {
+                    ignoreCase = true
+                }
+                if (options.has("w")) {
+                    wordRegex = true
+                }
+            }
+        }
+
+        if (wordRegex) {
+            regex = ("\b" + regex.pattern + "\b").toRegex()
+        }
+        val sb = StringBuilder()
+
+        var lines = res.split("\n")
+        val linesLen = lines.size
+
+        if (ignoreCase) {
+            lines.forEachIndexed { index, it ->
+                if (regex.find(it.toLowerCase()) != null) {
+                    sb.append(it)
+                    sb.append('\n')
+                    if (N != null) {
+                        for (i in 1..min(linesLen, N!!)) {
+                            sb.append(lines[index + i])
+                            sb.append('\n')
+                        }
+                    }
+                }
+            }
+        } else {
+            lines.forEachIndexed { index, it ->
+                if (regex.find(it) != null) {
+                    sb.append(it)
+                    sb.append('\n')
+                    if (N != null) {
+                        for (i in 1..min(linesLen-index-1, N!!)) {
+                            sb.append(lines[index + i])
+                            sb.append('\n')
+                        }
+                    }
+                }
+            }
+        }
+
+        return sb.toString()
+    }
+
     /**
      * Register for common arguments for all funciton
      * @return OptionParser
@@ -311,3 +417,7 @@ class CommandRunner {
 }
 
 operator fun OptionSet.contains(option: String): Boolean = has(option)
+
+fun main() {
+    print(CommandRunner().grep(listOf("-A", "2", "hel+o"), "hello.txt"))
+}
