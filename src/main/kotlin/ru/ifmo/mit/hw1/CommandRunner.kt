@@ -8,7 +8,12 @@ import org.jline.terminal.TerminalBuilder
 import java.io.File
 import java.lang.IllegalArgumentException
 import java.lang.StringBuilder
+import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.stream.Collector
+import java.util.stream.Collectors
+import java.util.stream.Stream
 
 const val JOPTSIMPLE_SUPPRESS_EXIT = "joptsimple.suppressExit"
 
@@ -21,10 +26,10 @@ class CommandRunner {
     /**
      * @param pipes which you can get from Parser.
      */
-    fun commandParser(pipes: MutableList<String>): String {
+    fun commandParser(pipes: MutableList<String>, env: Environment): String {
         var res: String? = null
         pipes.forEachIndexed { idx, it ->
-            res = execCommand(it.split(" ")[0], it.split(" ").drop(1), res)
+            res = execCommand(it.split(" ")[0], it.split(" ").drop(1), res, env)
         }
         return res!!
     }
@@ -32,18 +37,31 @@ class CommandRunner {
     /**
      * Call needed function
      */
-    private fun execCommand(command: String, opt: List<String>, arg: String?): String {
+    private fun execCommand(command: String, opt: List<String>, arg: String?, env: Environment): String {
         when (command) {
-            "cat" -> return cat(opt, arg)
-            "wc" -> return wc(opt, arg)
-            "echo" -> return echo(opt, arg)
-            "pwd" -> return pwd(opt, arg)
-            "exit" -> return exit(opt, arg)
+            "cat" -> return cat(opt, arg, env)
+            "wc" -> return wc(opt, arg, env)
+            "echo" -> return echo(opt, arg, env)
+            "pwd" -> return pwd(opt, arg, env)
+            "exit" -> return exit(opt, arg, env)
+            "ls" -> return ls(opt, arg, env)
+            "cd" -> return cd(opt, arg, env)
         }
         return ""
     }
 
-    private fun cat(opt: List<String>, arg: String?): String {
+    private fun getRealFileName(path: String, env: Environment): String {
+        var complexPath = Paths.get(env["__curr_dir__"].orEmpty()).resolve(path).toAbsolutePath().toString()
+        var getShorter = true
+        while (getShorter) {
+            val newPath = complexPath.replace(Regex("//|/([^/]{3,}|[^/.][^/]|[^/][^/.]|.?)/\\.\\.(/|\$)"), "/")
+            getShorter = newPath != complexPath
+            complexPath = newPath
+        }
+        return complexPath
+    }
+
+    private fun cat(opt: List<String>, arg: String?, env: Environment): String {
         var drop: Int? = null
         opt.reversed().forEachIndexed { index, s ->
             if (s[0] == '-' && drop == null) {
@@ -95,7 +113,7 @@ class CommandRunner {
         var sb = StringBuilder()
         val printLines = mutableListOf<String>()
         files.forEach { file ->
-            File(Paths.get(file).toRealPath().toString()).forEachLine {
+            File(Paths.get(getRealFileName(file, env)).toRealPath().toString()).forEachLine {
                 val line = it
                 if (ifDel2Empty) {
                     if (line.isBlank() || line.isNullOrEmpty()) if (is2Empty) return@forEachLine else is2Empty = true
@@ -128,7 +146,7 @@ class CommandRunner {
         return sb.toString()
     }
 
-    private fun wc(opt: List<String>, arg: String?): String {
+    private fun wc(opt: List<String>, arg: String?, env: Environment): String {
         var argV = arg
         var optC = listOf<String>()
         if (argV == null) {
@@ -174,7 +192,7 @@ class CommandRunner {
         return sb.toString()
     }
 
-    private fun echo(opt: List<String>, arg: String?): String {
+    private fun echo(opt: List<String>, arg: String?, env: Environment): String {
         var optC = listOf<String>()
         var drop: Int? = null
         opt.reversed().forEachIndexed { index, s ->
@@ -220,7 +238,38 @@ class CommandRunner {
         return argV
     }
 
-    private fun pwd(opt: List<String>, arg: String?): String {
+    private fun ls(opt: List<String>, arg: String?, env: Environment): String {
+        val currFolder = when (opt.size) {
+            0 -> Paths.get(getRealFileName("", env)).toAbsolutePath().toString()
+            1 -> Paths.get(getRealFileName("", env)).resolve(opt[0]).toAbsolutePath().toString()
+            else -> return "Invalid arguments"
+        }
+        val prefix = if (opt.isEmpty()) "" else opt[0] + "/"
+        val sb = StringBuilder()
+        File(currFolder).listFiles().orEmpty().forEach {
+            sb.append(prefix + it.name).append('\n')
+        }
+        return sb.toString()
+    }
+
+    private fun cd(opt: List<String>, arg: String?, env: Environment): String {
+        fun testDirAndSet(dir: String): String {
+            val path = getRealFileName(dir, env)
+            if (Files.exists(Path.of(path))) {
+//                Files.
+                env["__curr_dir__"] = path
+                return ""
+            }
+            return "Invalid directory"
+        }
+
+        return when (opt.size) {
+            1 -> testDirAndSet(opt[0])
+            else -> "Invalid arguments"
+        }
+    }
+
+    private fun pwd(opt: List<String>, arg: String?, env: Environment): String {
         var argV = arg
         var printLogical = true
 
@@ -237,14 +286,13 @@ class CommandRunner {
             }
         }
         if (printLogical) {
-            return Paths.get("").toAbsolutePath().toString()
+            return Paths.get(getRealFileName("", env)).toAbsolutePath().toString()
         }
-        return Paths.get("").toRealPath().toString()
+        return Paths.get(getRealFileName("", env)).toRealPath().toString()
     }
 
-    private fun exit(opt: List<String>, arg: String?): String {
+    private fun exit(opt: List<String>, arg: String?, env: Environment): String {
         throw ExitCommand()
-        return ""
     }
 
     /**

@@ -1,6 +1,6 @@
 package ru.ifmo.mit.hw1
 
-import org.junit.Assert.assertEquals
+import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.contrib.java.lang.system.TextFromStandardInputStream
@@ -22,7 +22,7 @@ class testCLI {
         val stream = PrintStream(outputStream)
         System.setOut(stream)
         systemInMock.provideLines("a=10", "echo \$a", "echo 123 | wc ", "exit")
-        app.main()
+        app.main(arrayOf())
         val res = """
         
         10
@@ -45,7 +45,7 @@ class testCLI {
             "cat -b \$FILE gradlew.bat",
             "exit"
         )
-        app.main()
+        app.main(arrayOf())
         val res = """
         
         0 plugins {
@@ -237,7 +237,7 @@ class testCLI {
         val stream = PrintStream(outputStream)
         System.setOut(stream)
         systemInMock.provideLines("pwd -L ", "pwd --physical ", "exit")
-        app.main()
+        app.main(arrayOf())
         val res = """
             /home/karl-crl/Desktop/IFMO/Software_des
             /home/karl-crl/Desktop/IFMO/Software_des
@@ -254,7 +254,7 @@ class testCLI {
         val stream = PrintStream(outputStream)
         System.setOut(stream)
         systemInMock.provideLines("a=10", "echo \$a", "x=exit", "\$x")
-        app.main()
+        app.main(arrayOf())
         val res = """
             
             10
@@ -271,7 +271,7 @@ class testCLI {
         val stream = PrintStream(outputStream)
         System.setOut(stream)
         systemInMock.provideLines("echo 123 | wc ", "echo {12 3        4} | wc ", "exit")
-        app.main()
+        app.main(arrayOf())
         val res = """
         1 1 3
         1 3 15
@@ -283,7 +283,7 @@ class testCLI {
     @Test
     fun TestCommandRunner() {
         val cmdr = CommandRunner()
-        val res = cmdr.commandParser(mutableListOf<String>("echo build.gradle", "cat -b"))
+        val res = cmdr.commandParser(mutableListOf<String>("echo build.gradle", "cat -b"), Environment())
         val expected = """
             0 plugins {
             1     id 'java'
@@ -331,5 +331,44 @@ class testCLI {
         val expected = mutableListOf<String>("echo build.gradle", "cat -b")
         assertEquals(expected[0], result[0])
         assertEquals(expected[1], result[1])
+    }
+
+    @Test
+    fun TestLs() {
+        val app = Application
+        val outputStream = ByteArrayOutputStream()
+        val stream = PrintStream(outputStream)
+        System.setOut(stream)
+        systemInMock.provideLines("ls src/test", "exit")
+        val expected = "src/test/kotlin"
+        app.main(arrayOf())
+        assertEquals(expected, outputStream.toString().trim())
+    }
+
+    @Test
+    fun TestCd() {
+        val app = Application
+        val outputStream = ByteArrayOutputStream()
+        val stream = PrintStream(outputStream)
+        System.setOut(stream)
+        systemInMock.provideLines("pwd", "cd src/test", "pwd", "cd ..", "pwd", "exit")
+        app.main(arrayOf())
+        val res = outputStream.toString()
+        assertTrue(res.contains('\n'))
+        val fstLn = res.substring(0, res.indexOf('\n'))
+        val expected = "$fstLn\n\n$fstLn/src/test\n\n$fstLn/src"
+        assertEquals(expected, outputStream.toString().trim())
+    }
+
+    @Test
+    fun TestCdLs() {
+        val app = Application
+        val outputStream = ByteArrayOutputStream()
+        val stream = PrintStream(outputStream)
+        System.setOut(stream)
+        systemInMock.provideLines("cd src", "ls test", "cd test", "ls", "exit")
+        val expected = "test/kotlin\n\n\nkotlin"
+        app.main(arrayOf())
+        assertEquals(expected, outputStream.toString().trim())
     }
 }
