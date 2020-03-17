@@ -256,7 +256,6 @@ class CommandRunner {
         fun testDirAndSet(dir: String): String {
             val path = getRealFileName(dir, env)
             if (Files.exists(Path.of(path))) {
-//                Files.
                 env["__curr_dir__"] = path
                 return ""
             }
@@ -264,6 +263,7 @@ class CommandRunner {
         }
 
         return when (opt.size) {
+            0 -> ""
             1 -> testDirAndSet(opt[0])
             else -> "Invalid arguments"
         }
