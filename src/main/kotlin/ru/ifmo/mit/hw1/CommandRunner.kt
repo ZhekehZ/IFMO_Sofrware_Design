@@ -1,19 +1,14 @@
 package ru.ifmo.mit.hw1
 
 import joptsimple.*
-import kotlin.system.exitProcess
-
-import java.util.*
+import org.jetbrains.annotations.NotNull
 import org.jline.terminal.TerminalBuilder
+import ru.ifmo.mit.hw1.Application.CURR_ROOT
 import java.io.File
-import java.lang.IllegalArgumentException
-import java.lang.StringBuilder
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
-import java.util.stream.Collector
-import java.util.stream.Collectors
-import java.util.stream.Stream
+import java.util.*
 
 const val JOPTSIMPLE_SUPPRESS_EXIT = "joptsimple.suppressExit"
 
@@ -50,15 +45,16 @@ class CommandRunner {
         return ""
     }
 
-    private fun getRealFileName(path: String, env: Environment): String {
-        var complexPath = Paths.get(env["__curr_dir__"].orEmpty()).resolve(path).toAbsolutePath().toString()
-        var getShorter = true
-        while (getShorter) {
-            val newPath = complexPath.replace(Regex("//|/([^/]{3,}|[^/.][^/]|[^/][^/.]|.?)/\\.\\.(/|\$)"), "/")
-            getShorter = newPath != complexPath
-            complexPath = newPath
-        }
-        return complexPath
+    private fun getRealPath(path: String, env: Environment): Path {
+        return getCurrRootPath(env).resolve(path).toAbsolutePath().normalize()
+    }
+
+    private fun getCurrRootPath(env: Environment): Path {
+        return Paths.get(env[CURR_ROOT].orEmpty())
+    }
+
+    private fun changeCurrRoot(root: Path, env: Environment) {
+        env[CURR_ROOT] = root.toString()
     }
 
     private fun cat(opt: List<String>, arg: String?, env: Environment): String {
@@ -113,7 +109,7 @@ class CommandRunner {
         var sb = StringBuilder()
         val printLines = mutableListOf<String>()
         files.forEach { file ->
-            File(Paths.get(getRealFileName(file, env)).toRealPath().toString()).forEachLine {
+            File(getRealPath(file, env).toRealPath().toString()).forEachLine {
                 val line = it
                 if (ifDel2Empty) {
                     if (line.isBlank() || line.isNullOrEmpty()) if (is2Empty) return@forEachLine else is2Empty = true
@@ -238,33 +234,62 @@ class CommandRunner {
         return argV
     }
 
-    private fun ls(opt: List<String>, arg: String?, env: Environment): String {
-        val currFolder = when (opt.size) {
-            0 -> Paths.get(getRealFileName("", env)).toAbsolutePath().toString()
-            1 -> Paths.get(getRealFileName("", env)).resolve(opt[0]).toAbsolutePath().toString()
+
+    /**
+     * Prints list of files in directory or file name
+     *
+     * @param arg -- arguments (must be exactly one)
+     * @param env -- current (local) environment
+     *
+     * @return list of files in directory -- when the argument is a directory
+     *         file name -- when the argument is a file
+     *         "Invalid arguments" -- when the number of arguments is not equal to 1
+     *         "Invalid path <path>" -- when the argument is invalid
+     */
+    private fun ls(@NotNull opt: List<String>, arg: String?, @NotNull env: Environment): String {
+        val root = getCurrRootPath(env)
+
+        val dir = when (opt.size) {
+            0 -> root
+            1 -> getRealPath(opt[0], env)
             else -> return "Invalid arguments"
         }
-        val prefix = if (opt.isEmpty()) "" else opt[0] + "/"
-        val sb = StringBuilder()
-        File(currFolder).listFiles().orEmpty().forEach {
-            sb.append(prefix + it.name).append('\n')
+
+        if (!Files.exists(dir)) return "Invalid path ($dir)"
+
+        return if (Files.isDirectory(dir)) {
+            Files.list(dir)
+                .map(root::relativize)
+                .map { e -> e.toString() }
+                .reduce { a, b -> "$a\n$b" }
+                .orElse("") + "\n"
+        } else {
+            dir.toString() + "\n"
         }
-        return sb.toString()
     }
 
-    private fun cd(opt: List<String>, arg: String?, env: Environment): String {
-        fun testDirAndSet(dir: String): String {
-            val path = getRealFileName(dir, env)
-            if (Files.exists(Path.of(path))) {
-                env["__curr_dir__"] = path
-                return ""
-            }
-            return "Invalid directory"
-        }
-
+    /**
+     * Changes current working directory (see [CURR_ROOT] in [Environment] variable)
+     *  Does nothing when called without arguments
+     *
+     * @param arg -- call arguments (no more than one)
+     * @param env -- current (local) environment
+     *
+     * @return "" -- when the directory has successfully changed
+     *         "Invalid directory" -- when the directory path is wrong
+     *         "Invalid arguments" -- when more than one argument is passed
+     */
+    private fun cd(@NotNull opt: List<String>, arg: String?, @NotNull env: Environment): String {
         return when (opt.size) {
             0 -> ""
-            1 -> testDirAndSet(opt[0])
+            1 -> {
+                val path = getRealPath(opt[0], env)
+                if (Files.isDirectory(path)) {
+                    changeCurrRoot(path, env)
+                    return ""
+                }
+                return "Invalid directory"
+            }
             else -> "Invalid arguments"
         }
     }
@@ -286,9 +311,9 @@ class CommandRunner {
             }
         }
         if (printLogical) {
-            return Paths.get(getRealFileName("", env)).toAbsolutePath().toString()
+            return getCurrRootPath(env).toString()
         }
-        return Paths.get(getRealFileName("", env)).toRealPath().toString()
+        return getCurrRootPath(env).toRealPath().toString()
     }
 
     private fun exit(opt: List<String>, arg: String?, env: Environment): String {
